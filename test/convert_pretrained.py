@@ -27,7 +27,7 @@ TASK_NAME = "tworoom"
 HF_DIR = "data/hf_tworoom"
 
 # 输出目录（相对于项目根目录，最终会放在 $STABLEWM_HOME/ 下）
-OUTPUT_DIR = "data"
+OUTPUT_DIR = "checkpoint"
 
 # ==========================================================
 
@@ -42,15 +42,12 @@ def init_from_config(cls, cfg_dict):
     """
     sig = inspect.signature(cls)
     valid_params = set(sig.parameters.keys())
-    # 判断类是否接收 **kwargs
-    has_varkw = any(p.kind == p.Parameter.VAR_KEYWORD for p in sig.parameters.values())
+    has_varkw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
     
     filtered_kwargs = {}
     for k, v in cfg_dict.items():
-        # 1. 过滤掉 Hydra 内部字段 (通常以 _ 开头)
         if k.startswith('_'):
             continue
-        # 2. 只有当参数在类的 __init__ 列表中，或者类接受 **kwargs 时才传入
         if k in valid_params or has_varkw:
             filtered_kwargs[k] = v
             
@@ -110,7 +107,7 @@ def convert_hf_to_ckpt(src_dir, task_name, output_dir=None):
         norm_fn=torch.nn.BatchNorm1d
     )
 
-    # 使用智能过滤函数实例化网络组件，避免 kwargs 报错
+    # 实例化网络组件
     model = JEPA(
         encoder=encoder,
         predictor=init_from_config(ARPredictor, cfg["predictor"]),
@@ -123,7 +120,7 @@ def convert_hf_to_ckpt(src_dir, task_name, output_dir=None):
     print("加载权重...")
     raw_weights = torch.load(weights_file, map_location='cpu', weights_only=False)
     
-    # 智能解包：处理可能存在的嵌套结构
+    # 1. 智能解包
     if 'model_state_dict' in raw_weights:
         state_dict = raw_weights['model_state_dict']
     elif 'state_dict' in raw_weights:
@@ -133,14 +130,30 @@ def convert_hf_to_ckpt(src_dir, task_name, output_dir=None):
     else:
         state_dict = raw_weights
 
-    # 移除前缀：兼容 DDP (module.) 或 torch.compile (_orig_mod.) 的多余前缀
+    # 2. 移除前缀并进行名称映射（解决 HF ViT 到 Custom ViT 的对齐问题）
     clean_state_dict = {}
     for k, v in state_dict.items():
         clean_k = k.replace('_orig_mod.', '')
         clean_k = clean_k.replace('module.', '')
+        
+        # ---------- 关键修复：HuggingFace ViT 字段映射 ----------
+        # a. 修正网络层前缀
+        clean_k = clean_k.replace('encoder.encoder.layer.', 'encoder.layers.')
+        
+        # b. 修正 Attention 子模块
+        clean_k = clean_k.replace('.attention.attention.query.', '.attention.q_proj.')
+        clean_k = clean_k.replace('.attention.attention.key.', '.attention.k_proj.')
+        clean_k = clean_k.replace('.attention.attention.value.', '.attention.v_proj.')
+        clean_k = clean_k.replace('.attention.output.dense.', '.attention.o_proj.')
+        
+        # c. 修正 MLP (FeedForward) 子模块
+        clean_k = clean_k.replace('.intermediate.dense.', '.mlp.fc1.')
+        clean_k = clean_k.replace('.output.dense.', '.mlp.fc2.')
+        # -------------------------------------------------------
+        
         clean_state_dict[clean_k] = v
 
-    # 严格加载权重
+    # 3. 严格加载权重
     try:
         model.load_state_dict(clean_state_dict, strict=True)
     except RuntimeError as e:
@@ -150,7 +163,7 @@ def convert_hf_to_ckpt(src_dir, task_name, output_dir=None):
 
     model.eval()
 
-    # 保存为 object.ckpt 格式 (保存整个对象)
+    # 保存为 object.ckpt 格式
     print(f"保存检查点到: {out_path}")
     torch.save(model, out_path)
 
@@ -161,7 +174,6 @@ def convert_hf_to_ckpt(src_dir, task_name, output_dir=None):
 
 
 if __name__ == "__main__":
-    # 构建绝对路径
     hf_dir_abs = project_root / HF_DIR
     output_dir_abs = project_root / OUTPUT_DIR
 
