@@ -9,7 +9,8 @@ world:
   max_episode_steps: ??? # make sure it's >= eval_budget
 
 seed: 42
-policy: random # ckpt name or random
+policy: tworoom/lewm  # 指定为你刚刚转换好的模型
+# policy: random # ckpt name or random
 
 dataset:
   stats: ${eval.dataset_name}

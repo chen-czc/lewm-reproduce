@@ -83,9 +83,18 @@ def run(cfg):
     # 转换配置并加载数据集
     dataset_cfg = OmegaConf.to_container(cfg.data.dataset, resolve=True)
     dataset_name = dataset_cfg.pop("name")
+    # cache_dir = os.environ.get("LOCAL_DATASET_DIR", None)
+    # dataset = swm.data.load_dataset(
+    #     dataset_name, transform=None, cache_dir=cache_dir, **dataset_cfg
+    # )
     cache_dir = os.environ.get("LOCAL_DATASET_DIR", None)
-    dataset = swm.data.load_dataset(
-        dataset_name, transform=None, cache_dir=cache_dir, **dataset_cfg
+    # 如果环境变量没有配置，回退到默认的缓存目录 (和 eval.py 保持一致)
+    if cache_dir is None:
+        cache_dir = swm.data.utils.get_cache_dir()
+        
+    # 改用最新的 HDF5Dataset 类进行实例化
+    dataset = swm.data.HDF5Dataset(
+        dataset_name, cache_dir=cache_dir, **dataset_cfg
     )
     # 创建图像预处理器
     transforms = [get_img_preprocessor(source='pixels', target='pixels', img_size=cfg.img_size)]
@@ -146,9 +155,14 @@ def run(cfg):
     ##       训练配置       ##
     ##########################
 
+    # # 设置运行目录
+    # run_id = cfg.get("subdir") or ""
+    # run_dir = Path(swm.data.utils.get_cache_dir(sub_folder='checkpoints'), run_id)
+
     # 设置运行目录
     run_id = cfg.get("subdir") or ""
-    run_dir = Path(swm.data.utils.get_cache_dir(sub_folder='checkpoints'), run_id)
+    # 去掉 sub_folder 参数，直接用 Path 拼接目录
+    run_dir = Path(swm.data.utils.get_cache_dir()) / "checkpoints" / str(run_id)
 
     # 配置WandB日志记录器
     logger = None

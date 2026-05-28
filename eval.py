@@ -83,7 +83,7 @@ def get_dataset(cfg, dataset_name):
     return dataset
 
 
-@hydra.main(version_base=None, config_path="./config/eval", config_name="pusht")
+@hydra.main(version_base=None, config_path="./config/eval", config_name="tworoom")
 def run(cfg: DictConfig):
     """
     运行评估，比较世界模型策略与随机策略
@@ -134,12 +134,32 @@ def run(cfg: DictConfig):
 
     # 如果不是随机策略，加载预训练模型
     if policy != "random":
-        model = swm.wm.utils.load_pretrained(cfg.policy)
-        model = model.to("cuda")
+        # 修复：绕过官方缺失的 utils 模块，直接手动拼接路径加载
+        model_path = Path(swm.data.utils.get_cache_dir()) / f"{cfg.policy}_object.ckpt"
+        print(f"[*] 正在加载本地模型: {model_path}")
+        if not model_path.exists():
+            raise FileNotFoundError(f"找不到权重文件，请检查路径: {model_path}")
+            
+        # 修复 PyTorch 2.6+ 的安全限制，允许加载完整的模型对象
+        import jepa  # 确保命名空间里有这个类
+        import module
+        model = torch.load(model_path, map_location="cpu", weights_only=False)
+        
+        # 自动检测，如果没有可用/兼容的 GPU 就退回到 CPU
+        device = "cpu"
+        model = model.to(device)
+        print(f"[*] 模型已加载至: {device}")
+
         model = model.eval()
         model.requires_grad_(False)
         model.interpolate_pos_encoding = True
         config = swm.PlanConfig(**cfg.plan_config)
+        
+        # 强制将 solver 的配置改为当前设备 (CPU)
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        OmegaConf.set_struct(cfg, False) # 解除 Hydra 配置锁定
+        cfg.solver.device = device       # 强制覆盖 solver 的 device
+        
         solver = hydra.utils.instantiate(cfg.solver, model=model)
         policy = swm.policy.WorldModelPolicy(
             solver=solver, config=config, process=process, transform=transform
@@ -196,15 +216,20 @@ def run(cfg: DictConfig):
 
     # 运行评估
     start_time = time.time()
-    metrics = world.evaluate(
-        dataset=dataset,
-        start_steps=eval_start_idx.tolist(),
-        goal_offset=cfg.eval.goal_offset_steps,
-        eval_budget=cfg.eval.eval_budget,
+    
+    # 方案A：直接调用专门处理离线数据集的评估方法
+    print("[*] 正在从数据集中加载初始状态和目标状态...")
+    metrics = world.evaluate_from_dataset(
+        dataset=dataset,  # 直接传入原生的 dataset，不需要 NumpyDatasetWrapper
         episodes_idx=eval_episodes.tolist(),
-        callables=OmegaConf.to_container(cfg.eval.get("callables"), resolve=True),
-        video=results_path,
+        start_steps=eval_start_idx.tolist(),
+        goal_offset_steps=cfg.eval.goal_offset_steps,
+        eval_budget=cfg.eval.eval_budget,
+        callables=OmegaConf.to_container(cfg.eval.get("callables"), resolve=True) if cfg.eval.get("callables") else None,
+        save_video=True,
+        video_path=results_path
     )
+        
     end_time = time.time()
 
     print(metrics)
