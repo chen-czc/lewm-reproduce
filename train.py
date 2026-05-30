@@ -68,6 +68,35 @@ def lejepa_forward(self, batch, stage, cfg):
 
 @hydra.main(version_base=None, config_path="./config/train", config_name="lewm")
 def run(cfg):
+    #########################################################
+    ##       👇 添加在这里：OOM 核心排查参数打印 👇        ##
+    #########################################################
+    print("\n" + "="*50)
+    print("🚨🚨🚨 内存占用核心参数检查 🚨🚨🚨")
+    
+    # 1. 批处理大小 (最容易导致 OOM)
+    batch_size = cfg.loader.get("batch_size", "未找到")
+    print(f"📦 Batch Size (批大小): {batch_size}  <-- 建议先降到 4 或 8 试试")
+    
+    # 2. 图像分辨率
+    img_size = cfg.get("img_size", "未找到")
+    print(f"🖼️ Image Size (图像分辨率): {img_size}  <-- 如果是 224 以上，非常吃显存")
+    
+    # 3. 序列长度 (T)
+    ctx_len = cfg.get("history_size", "未找到")
+    n_preds = cfg.get("num_preds", "未找到")
+    print(f"🎞️ Sequence (时间步长): 历史 {ctx_len} 帧 + 预测 {n_preds} 帧")
+    
+    # 4. DataLoader 的 Worker 数量 (过大会挤爆主内存或共享内存)
+    num_workers = cfg.loader.get("num_workers", "未找到")
+    print(f"👷 Num Workers: {num_workers}")
+
+    # 5. DDP 多卡并行配置检查
+    devices = cfg.trainer.get("devices", "未找到")
+    strategy = cfg.trainer.get("strategy", "未找到")
+    print(f"💻 Trainer 并行策略: Devices={devices}, Strategy={strategy}")
+    
+    print("="*50 + "\n")
     """
     主训练函数
 

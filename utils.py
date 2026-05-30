@@ -134,18 +134,42 @@ class SaveCkptCallback(Callback):
             if (trainer.current_epoch + 1) == trainer.max_epochs:
                 self._save(pl_module.model, trainer.current_epoch + 1)
 
+    # def _save(self, model, epoch):
+    #     """
+    #     保存模型检查点
+
+    #     Args:
+    #         model: 要保存的模型
+    #         epoch: 当前epoch编号
+    #     """
+    #     from stable_worldmodel.wm.utils import save_pretrained
+    #     save_pretrained(
+    #         model,
+    #         run_name=self.run_name,
+    #         config=self.cfg,
+    #         filename=f'weights_epoch_{epoch}.pt',
+    #     )
+
     def _save(self, model, epoch):
         """
-        保存模型检查点
+        使用纯 PyTorch 标准方法保存模型权重 (替代失效的 save_pretrained)
 
         Args:
             model: 要保存的模型
             epoch: 当前epoch编号
         """
-        from stable_worldmodel.wm.utils import save_pretrained
-        save_pretrained(
-            model,
-            run_name=self.run_name,
-            config=self.cfg,
-            filename=f'weights_epoch_{epoch}.pt',
-        )
+        import os
+        import torch
+        
+        # 1. 确定保存目录并确保其存在
+        save_dir = os.path.join(".", "checkpoints", self.run_name)
+        os.makedirs(save_dir, exist_ok=True)
+        
+        # 2. 拼接完整的文件路径
+        file_path = os.path.join(save_dir, f'weights_epoch_{epoch}.pt')
+        
+        # 3. 提取纯净的模型权重 (state_dict) 并保存
+        torch.save(model.state_dict(), file_path)
+        
+        # 4. 打印成功日志，方便在终端查看
+        print(f"\n[Rank 0] Model weights successfully saved to: {file_path}")
