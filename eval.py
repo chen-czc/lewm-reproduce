@@ -146,7 +146,7 @@ def run(cfg: DictConfig):
         model = torch.load(model_path, map_location="cpu", weights_only=False)
         
         # 自动检测，如果没有可用/兼容的 GPU 就退回到 CPU
-        device = "cpu"
+        device = "cuda" if torch.cuda.is_available() else "cpu"
         model = model.to(device)
         print(f"[*] 模型已加载至: {device}")
 
@@ -155,8 +155,6 @@ def run(cfg: DictConfig):
         model.interpolate_pos_encoding = True
         config = swm.PlanConfig(**cfg.plan_config)
         
-        # 强制将 solver 的配置改为当前设备 (CPU)
-        device = "cuda" if torch.cuda.is_available() else "cpu"
         OmegaConf.set_struct(cfg, False) # 解除 Hydra 配置锁定
         cfg.solver.device = device       # 强制覆盖 solver 的 device
         
@@ -226,7 +224,7 @@ def run(cfg: DictConfig):
         goal_offset_steps=cfg.eval.goal_offset_steps,
         eval_budget=cfg.eval.eval_budget,
         callables=OmegaConf.to_container(cfg.eval.get("callables"), resolve=True) if cfg.eval.get("callables") else None,
-        save_video=True,
+        save_video=False,
         video_path=results_path
     )
         

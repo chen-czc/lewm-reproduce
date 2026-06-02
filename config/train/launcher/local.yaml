@@ -7,7 +7,7 @@ defaults:
 wandb:
   enabled: True
   config:
-    project: lewm
+    project: lewm-tworoom
     name: ${output_model_name}
     id: ${subdir}
     resume: allow

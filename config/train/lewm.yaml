@@ -19,12 +19,12 @@ trainer:
   num_nodes: 2      # 🚨 新增：告诉框架一共有 2 台物理机器
   devices: 4        # 🚨 修改：每台机器上只有 4 张卡
   accelerator: gpu
-  precision: 16-mixed
+  precision: 16-mixed # 默认 bf16
   gradient_clip_val: 1.0
   strategy: ddp
 
 loader:
-  batch_size: 64
+  batch_size: 96    # 默认128
   num_workers: ${num_workers}
   persistent_workers: True
   prefetch_factor: 3
@@ -43,8 +43,3 @@ loss:
     kwargs:
       knots: 17
       num_proj: 1024
-
-wandb:
-  config:
-    project: "lewm_reproduce"
-    name: "tworoom_v1"
